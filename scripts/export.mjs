@@ -12,8 +12,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sourceDir = resolve(process.argv[2] ?? join(root, '..', 'code-replay-src'));
 const outDir = join(root, 'public', 'data');
 
-// Files that belong to the replay tooling, not to the guide
-const DEFAULT_IGNORE = ['README.md', 'play.sh'];
 
 function git(repo, ...args) {
   return execFileSync('git', ['-C', repo, ...args], {
@@ -111,7 +109,8 @@ function exportGuide(base) {
   const meta = JSON.parse(readFileSync(join(base, 'guide.json'), 'utf8'));
   const repoPath = meta.repo ?? 'repo';
   const repo = isAbsolute(repoPath) ? repoPath : join(base, repoPath);
-  const ignore = [...DEFAULT_IGNORE, ...(meta.ignore ?? [])];
+  // Files that belong to the replay tooling rather than the guide can be listed in guide.json
+  const ignore = meta.ignore ?? [];
 
   let prev = null;
   const stages = meta.stages.map((stage) => {

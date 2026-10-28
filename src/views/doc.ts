@@ -23,10 +23,12 @@ export class DocView {
 
   constructor(private readonly root: HTMLElement) {}
 
-  show(source: string, html = false): void {
-    if (this.shown === source) return;
+  /** Returns true when the content was replaced */
+  show(source: string, html = false): boolean {
+    if (this.shown === source) return false;
     this.shown = source;
     this.root.innerHTML = html ? source : renderMarkdown(source);
     this.root.scrollTop = 0;
+    return true;
   }
 }

@@ -15,6 +15,12 @@ function $(selector: string): HTMLElement {
   return el;
 }
 
+/** Guide titles often start with their own number ("2-3. …"); the id is shown separately */
+function stageTitle(id: string, title: string): string {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return title.replace(new RegExp(`^\\s*(?:stage\\s*)?${escaped}[.:)]?\\s+`, 'i'), '') || title;
+}
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -216,7 +222,7 @@ export class App implements ShellHost {
     const guide = this.guide;
     if (!guide) return null;
     const stage = guide.stages.find((s) => s.id === key);
-    if (stage) return { key: stage.id, title: stage.title, commits: stage.commits };
+    if (stage) return { key: stage.id, title: stageTitle(stage.id, stage.title), commits: stage.commits };
     const branch = guide.branches.find((b) => b.name === key);
     if (branch) return { key: branch.name, title: branch.title, commits: branch.commits };
     return null;
@@ -260,7 +266,7 @@ export class App implements ShellHost {
     this.shell.printHtml(
       `<span class="ok">✓ ${escapeHtml(key)} 단계 재생 끝.</span> ` +
         (next
-          ? `<span class="muted">다음 단계:</span> <a data-cmd="play ${escapeHtml(next.id)}">play ${escapeHtml(next.id)}</a> <span class="muted">— ${escapeHtml(next.title)}</span>`
+          ? `<span class="muted">다음 단계:</span> <a data-cmd="play ${escapeHtml(next.id)}">play ${escapeHtml(next.id)}</a> <span class="muted">— ${escapeHtml(stageTitle(next.id, next.title))}</span>`
           : '<span class="muted">마지막 단계입니다.</span>'),
     );
   }
@@ -413,7 +419,7 @@ export class App implements ShellHost {
       const current = s.id === this.player.playlist?.key ? ' current' : '';
       this.shell.printHtml(
         `${mark} <a class="stage-link${current}" data-cmd="play ${escapeHtml(s.id)}">${escapeHtml(s.id.padEnd(6))}</a>` +
-          `<span>${escapeHtml(s.title)}</span> <span class="muted">· 커밋 ${s.commits.length}</span>`,
+          `<span>${escapeHtml(stageTitle(s.id, s.title))}</span> <span class="muted">· 커밋 ${s.commits.length}</span>`,
       );
     }
     if (guide.branches.length) this.shell.printHtml('<span class="muted">실험 브랜치는</span> <a data-cmd="branches">branches</a>');
@@ -590,7 +596,7 @@ export class App implements ShellHost {
       `<li class="${key === current ? 'current' : ''} ${done.has(key) ? 'done' : ''} ${extra}">
         <button type="button" data-play="${escapeHtml(key)}"><span class="stage-id">${escapeHtml(label)}</span><span class="stage-title">${escapeHtml(title)}</span></button></li>`;
     const html = [
-      ...guide.stages.map((s) => item(s.id, s.id, s.title)),
+      ...guide.stages.map((s) => item(s.id, s.id, stageTitle(s.id, s.title))),
       ...guide.branches.map((b) => item(b.name, '⑂', `${b.title}`, 'branch')),
     ].join('');
     const list = $('#stage-list');
@@ -630,6 +636,39 @@ export class App implements ShellHost {
       this.docMode === 'intro'
         ? guide.intro || `# ${guide.title}\n\n${guide.summary}`
         : this.docFor(this.player.playlist?.key) || `# ${this.player.playlist?.title ?? ''}\n\n(설명이 없습니다)`;
-    this.doc.show(source);
+    if (this.doc.show(source)) this.linkFileMarkers();
+    this.highlightFileMarker();
+  }
+
+  /** "▶ `path` — 재생에서 따라 칩니다" lines jump to the commit that types that file */
+  private linkFileMarkers(): void {
+    const commits = this.player.playlist?.commits ?? [];
+    const seen = new Map<string, number>();
+    $('#doc')
+      .querySelectorAll<HTMLElement>('p')
+      .forEach((p) => {
+        const code = p.querySelector('code');
+        if (!p.textContent?.trimStart().startsWith('▶') || !code?.textContent) return;
+        const path = code.textContent.trim();
+        // The n-th marker for a file points at the n-th commit that touches it
+        const nth = seen.get(path) ?? 0;
+        seen.set(path, nth + 1);
+        const matches = commits
+          .map((c, i) => (c.files.some((f) => f.path === path || f.path.endsWith(`/${path}`)) ? i : -1))
+          .filter((i) => i >= 0);
+        const target = matches[Math.min(nth, matches.length - 1)];
+        if (target === undefined) return;
+        p.classList.add('file-jump');
+        p.dataset.commit = String(target);
+        p.title = `커밋 ${target + 1} 로 이동해 재생`;
+        p.addEventListener('click', () => this.player.seekCommit(target));
+      });
+  }
+
+  private highlightFileMarker(): void {
+    const current = String(this.player.commitIndex);
+    $('#doc')
+      .querySelectorAll<HTMLElement>('p.file-jump')
+      .forEach((p) => p.classList.toggle('playing', p.dataset.commit === current));
   }
 }

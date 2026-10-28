@@ -968,3 +968,31 @@ body {
     grid-template-columns: minmax(0, 1fr) minmax(320px, 36%);
   }
 }
+
+.side,
+.panel {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.markdown p.file-jump {
+  cursor: pointer;
+  border-radius: 4px;
+  margin-left: -6px;
+  padding-left: 6px;
+}
+
+.markdown p.file-jump:hover {
+  background: var(--bg-panel);
+}
+
+.markdown p.file-jump.playing {
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--yellow);
+}
+
+.markdown li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.2em;
+}
