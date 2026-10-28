@@ -4,12 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>code-replay</title>
-    <meta name="description" content="Craft 코딩 가이드의 코드를 타이핑 애니메이션으로 재생하고, 옆의 에디터에서 바로 따라 치는 플레이어" />
+    <meta name="description" content="가이드의 완성 코드를 타이핑 애니메이션으로 재생하는 따라 치기 플레이어" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1b26'/%3E%3Ctext x='5' y='23' font-family='monospace' font-size='18' fill='%237aa2f7'%3E%3E_%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Nanum+Gothic+Coding:wght@400;700&family=Noto+Sans+KR:wght@400;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Nanum+Gothic+Coding:wght@400;700&family=Noto+Sans+KR:wght@400;600&display=swap"
       rel="stylesheet"
     />
   </head>
@@ -19,47 +19,67 @@
       <a class="brand" href="#/">&gt;_ code-replay</a>
       <span id="crumbs" class="crumbs"></span>
       <span class="spacer"></span>
-      <button type="button" class="icon-button guide-only" data-open-doc="stage" title="이 단계 설명 전체">단계 설명</button>
+      <button type="button" class="icon-button guide-only" data-open-doc="stage" title="이 단계 설명 전체">설명</button>
       <button type="button" class="icon-button guide-only" data-open-doc="intro" title="가이드 소개">소개</button>
       <button type="button" id="open-keys" class="icon-button" title="단축키 (?)" aria-label="단축키">⌨</button>
-      <button type="button" id="open-settings" class="icon-button" title="설정" aria-label="설정">⚙</button>
-      <div id="settings" class="settings" hidden>
-        <label><input type="checkbox" id="set-notes" /> 설명을 말풍선으로 보기</label>
-        <label><input type="checkbox" id="set-autopause" /> 말풍선이 뜨면 재생 멈추기</label>
-        <label><input type="checkbox" id="ide-follow" /> 재생 파일을 내 코드에서 따라 열기</label>
-      </div>
+      <button type="button" id="open-settings" class="icon-button" title="테마 · 글꼴 · 재생 설정" aria-label="설정">⚙</button>
     </header>
 
     <main class="workspace">
-      <section class="pane ide-pane" aria-label="내 코드">
+      <section class="replay-pane" aria-label="재생">
         <div class="pane-head">
-          <span class="pane-label">내 코드</span>
-          <div id="ide-tabs" class="ide-tabs"></div>
-          <div class="ide-tools">
-            <button type="button" id="ide-compare" title="내 코드와 재생 코드를 나란히 비교">비교</button>
-            <button type="button" id="ide-download" title="지금 파일 다운로드">↓</button>
-          </div>
-        </div>
-        <div id="ide" class="ide"></div>
-        <p id="ide-empty" class="ide-empty">재생을 시작하면 같은 파일이 여기 열립니다. 보면서 따라 치세요.<br />친 코드는 이 브라우저에 자동 저장됩니다.</p>
-      </section>
-
-      <section class="pane replay-pane" aria-label="재생">
-        <div class="pane-head">
-          <span class="pane-label">재생</span>
           <div id="editor-title" class="editor-title"></div>
         </div>
         <div id="editor" class="editor" aria-live="off"></div>
         <aside id="bubble" class="bubble" aria-live="polite"></aside>
         <button type="button" id="bubble-chip" class="bubble-chip" hidden title="설명 다시 보기">💬 설명</button>
       </section>
-
       <div id="home" class="home"></div>
     </main>
 
     <aside id="drawer" class="drawer" aria-label="단계 목록">
       <h2>STAGES</h2>
       <ol id="stage-list" class="stage-list"></ol>
+    </aside>
+
+    <aside id="settings" class="settings" aria-label="설정" hidden>
+      <div class="settings-head">
+        <h2>설정</h2>
+        <button type="button" id="settings-close" class="icon-button" aria-label="닫기">✕</button>
+      </div>
+      <div class="settings-body">
+        <section>
+          <h3>테마</h3>
+          <select id="set-theme"></select>
+          <p class="hint">
+            지금 쓰는 VS Code 테마를 그대로 쓰려면: VS Code에서 <kbd>Cmd/Ctrl+Shift+P</kbd> →
+            <b>Developer: Generate Color Theme From Current Settings</b> → 저장한 JSON 을
+            <code>code-replay theme add 파일.json</code>
+          </p>
+        </section>
+        <section>
+          <h3>글꼴</h3>
+          <select id="set-font"></select>
+          <input id="set-font-custom" type="text" placeholder="설치된 글꼴 이름 (예: D2Coding)" spellcheck="false" autocomplete="off" />
+          <div class="settings-row">
+            <label for="set-size">크기 <output id="out-size"></output></label>
+            <input id="set-size" type="range" min="11" max="24" step="1" />
+          </div>
+          <div class="settings-row">
+            <label for="set-line">줄 간격 <output id="out-line"></output></label>
+            <input id="set-line" type="range" min="1.2" max="2.2" step="0.05" />
+          </div>
+          <label class="check"><input type="checkbox" id="set-ligatures" /> 합자 (=&gt; != 같은 기호 합치기)</label>
+          <pre class="font-preview" aria-label="미리보기"><span class="hljs-keyword">fn</span> <span class="hljs-title function_">main</span>() -&gt; <span class="hljs-type">Result</span>&lt;(), <span class="hljs-type">Error</span>&gt; {
+    <span class="hljs-keyword">let</span> 이름 = <span class="hljs-string">"0O il1 {}[] =&gt; != &lt;="</span>; <span class="hljs-comment">// 한글 주석</span>
+}</pre>
+        </section>
+        <section>
+          <h3>재생</h3>
+          <label class="check"><input type="checkbox" id="set-notes" /> 설명을 말풍선으로 보기</label>
+          <label class="check"><input type="checkbox" id="set-autopause" /> 말풍선이 뜨면 재생 멈추기</label>
+        </section>
+      </div>
     </aside>
 
     <section id="controls" class="controls"></section>
@@ -73,7 +93,6 @@
           <button type="button" id="modal-close" class="icon-button" aria-label="닫기">✕</button>
         </div>
         <article id="modal-doc" class="markdown modal-body"></article>
-        <div id="modal-diff" class="modal-body modal-diff"></div>
       </div>
     </div>
 

@@ -14,12 +14,7 @@
     "skipLibCheck": true,
     "types": [
       "vite/client"
-    ],
-    "paths": {
-      "monaco-vs/*": [
-        "./node_modules/monaco-editor/esm/vs/*"
-      ]
-    }
+    ]
   },
   "include": [
     "src"
