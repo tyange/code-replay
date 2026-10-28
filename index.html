@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>code-replay</title>
-    <meta name="description" content="Craft 코딩 가이드의 코드를 타이핑 애니메이션으로 재생하고, 단계 설명을 옆에 보여 주는 따라 치기 플레이어" />
+    <meta name="description" content="Craft 코딩 가이드의 코드를 타이핑 애니메이션으로 재생하고, 옆의 에디터에서 바로 따라 치는 플레이어" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1b26'/%3E%3Ctext x='5' y='23' font-family='monospace' font-size='18' fill='%237aa2f7'%3E%3E_%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,40 +15,49 @@
   </head>
   <body>
     <header class="topbar">
-      <button type="button" id="toggle-side" class="icon-button" aria-label="단계 목록 열기">☰</button>
+      <button type="button" id="toggle-drawer" class="icon-button guide-only" aria-label="단계 목록" title="단계 목록">☰ 단계</button>
       <a class="brand" href="#/">&gt;_ code-replay</a>
       <span id="crumbs" class="crumbs"></span>
+      <span class="spacer"></span>
+      <button type="button" class="icon-button guide-only" data-open-doc="stage" title="이 단계 설명 전체 (read)">단계 설명</button>
+      <button type="button" class="icon-button guide-only" data-open-doc="intro" title="가이드 소개 (read intro)">소개</button>
     </header>
 
     <main class="workspace">
-      <aside class="side">
-        <section class="panel stages-panel">
-          <h2>STAGES</h2>
-          <ol id="stage-list" class="stage-list"></ol>
-        </section>
-        <section class="panel files-panel">
-          <h2>FILES</h2>
-          <div id="file-tree" class="file-tree"></div>
-        </section>
-        <section class="panel commit-panel">
-          <div id="commit-info" class="commit-info"></div>
-        </section>
-      </aside>
-
-      <section class="editor-pane">
-        <div id="editor-title" class="editor-title"></div>
-        <div id="editor" class="editor" aria-live="off"></div>
-        <div id="home" class="home"></div>
+      <section class="pane ide-pane" aria-label="내 코드">
+        <div class="pane-head">
+          <span class="pane-label">내 코드</span>
+          <div id="ide-tabs" class="ide-tabs"></div>
+          <div class="ide-tools">
+            <label class="toggle" title="재생이 다른 파일로 넘어가면 같은 파일을 엽니다">
+              <input type="checkbox" id="ide-follow" checked /> 따라가기
+            </label>
+            <button type="button" id="ide-compare" title="내 코드와 재생 코드를 나란히 비교">비교</button>
+            <button type="button" id="ide-fill" title="이 커밋 직전까지의 파일로 내 코드를 채웁니다">여기까지 채우기</button>
+            <button type="button" id="ide-download" title="지금 파일 다운로드">↓</button>
+          </div>
+        </div>
+        <div id="ide" class="ide"></div>
+        <p id="ide-empty" class="ide-empty">재생을 시작하면 같은 파일이 여기 열립니다. 보면서 따라 치세요.<br />친 코드는 이 브라우저에 자동 저장됩니다.</p>
       </section>
 
-      <aside class="doc-pane">
-        <nav class="doc-tabs">
-          <button type="button" data-doc="stage">단계 설명</button>
-          <button type="button" data-doc="intro">가이드 소개</button>
-        </nav>
-        <article id="doc" class="markdown"></article>
-      </aside>
+      <section class="pane replay-pane" aria-label="재생">
+        <div class="pane-head">
+          <span class="pane-label">재생</span>
+          <div id="editor-title" class="editor-title"></div>
+        </div>
+        <div id="editor" class="editor" aria-live="off"></div>
+        <aside id="bubble" class="bubble" aria-live="polite"></aside>
+        <button type="button" id="bubble-chip" class="bubble-chip" hidden title="설명 다시 보기">💬 설명</button>
+      </section>
+
+      <div id="home" class="home"></div>
     </main>
+
+    <aside id="drawer" class="drawer" aria-label="단계 목록">
+      <h2>STAGES</h2>
+      <ol id="stage-list" class="stage-list"></ol>
+    </aside>
 
     <section id="controls" class="controls"></section>
 
@@ -66,6 +75,17 @@
         />
       </form>
     </section>
+
+    <div id="modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-head">
+          <h2 id="modal-title"></h2>
+          <button type="button" id="modal-close" class="icon-button" aria-label="닫기">✕</button>
+        </div>
+        <article id="modal-doc" class="markdown modal-body"></article>
+        <div id="modal-diff" class="modal-body modal-diff"></div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

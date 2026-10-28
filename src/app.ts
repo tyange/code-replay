@@ -1,10 +1,13 @@
+import { splitNotes, type StageNotes } from './notes';
 import { Player, type Playlist } from './player';
 import type { Guide, GuideSummary } from './types';
+import { BubbleView } from './views/bubble';
 import { ControlsView, type ControlAction } from './views/controls';
-import { DocView } from './views/doc';
+import { DocView, renderMarkdown } from './views/doc';
 import { EditorView } from './views/editor';
+import type { IdeView } from './views/ide';
 import { Shell, type ShellHost } from './views/shell';
-import { TreeView } from './views/tree';
+import { snapshotBefore } from './workspace';
 
 const DEFAULT_SPEED = 45;
 const BASE = import.meta.env.BASE_URL;
@@ -25,61 +28,78 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Per-viewer progress, kept only in this browser */
+/** Small per-viewer settings and progress, kept only in this browser */
+const storage = {
+  get<T>(key: string, fallback: T): T {
+    try {
+      const raw = localStorage.getItem(`code-replay:${key}`);
+      return raw === null ? fallback : (JSON.parse(raw) as T);
+    } catch {
+      return fallback;
+    }
+  },
+  set(key: string, value: unknown): void {
+    try {
+      localStorage.setItem(`code-replay:${key}`, JSON.stringify(value));
+    } catch {
+      // storage unavailable: the setting just isn't remembered
+    }
+  },
+};
+
 const progressStore = {
-  key: (slug: string) => `code-replay:done:${slug}`,
-  get(slug: string): Set<string> {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(this.key(slug)) ?? '[]') as string[]);
-    } catch {
-      return new Set();
-    }
-  },
-  set(slug: string, done: Set<string>): void {
-    try {
-      localStorage.setItem(this.key(slug), JSON.stringify([...done]));
-    } catch {
-      // storage unavailable: progress just isn't remembered
-    }
-  },
+  get: (slug: string) => new Set(storage.get<string[]>(`done:${slug}`, [])),
+  set: (slug: string, done: Set<string>) => storage.set(`done:${slug}`, [...done]),
 };
 
 const HELP: Array<[string, string]> = [
   ['ls', '가이드 목록 (가이드 안에서는 단계 목록)'],
   ['cd <가이드>', '가이드 열기 · cd .. 으로 나가기'],
   ['play [단계]', '단계 재생 · play next / play prev'],
-  ['read [단계|intro]', '설명만 보기'],
-  ['stages', '단계 목록과 진행 표시'],
-  ['branches', '실험 브랜치 목록 · play <브랜치>'],
+  ['read [단계|intro]', '설명 전체 보기'],
+  ['stages · branches', '단계 / 실험 브랜치 목록'],
   ['pause · resume · restart', '재생 제어'],
   ['next · prev', '다음 / 이전 커밋'],
   ['speed [ms]', '타이핑 속도 (글자당 ms, 작을수록 빠름)'],
+  ['notes on|off', '말풍선 설명 켜기 / 끄기'],
+  ['autopause on|off', '말풍선이 뜰 때 멈추기'],
+  ['fill', '내 코드를 이 커밋 직전 상태로 채우기'],
+  ['diff', '내 코드와 재생 코드 비교'],
   ['done [단계]', '단계를 완료로 표시 / 해제'],
   ['clear', '화면 지우기 (Ctrl+L)'],
 ];
 
 const KEYS: Array<[string, string]> = [
+  ['Alt+Space', '재생 / 일시정지 · 말풍선 계속 (에디터에서도 됨)'],
+  ['Alt+, · Alt+.', '한 줄 뒤로 / 앞으로'],
+  ['Alt+[ · Alt+]', '이전 / 다음 커밋'],
+  ['Alt+- · Alt+=', '느리게 / 빠르게'],
+  ['Alt+/', '명령어 입력'],
+  ['', '에디터 밖에서는 Alt 없이도:'],
   ['Space', '재생 / 일시정지'],
-  ['h · l', '한 줄 뒤로 / 앞으로'],
-  ['H · L', '변경 단위 뒤로 / 앞으로'],
-  ['p · n', '이전 / 다음 커밋'],
-  ['[ · ]', '이전 / 다음 단계'],
+  ['h · l / H · L', '한 줄 / 변경 단위 뒤로·앞으로'],
+  ['p · n / [ · ]', '이전·다음 커밋 / 이전·다음 단계'],
   ['r', '이 커밋 처음부터'],
-  ['- · +', '느리게 / 빠르게'],
-  ['/ · :', '명령어 입력'],
 ];
 
 export class App implements ShellHost {
   private guides: GuideSummary[] = [];
   private guide: Guide | null = null;
   private readonly cache = new Map<string, Guide>();
-  private docMode: 'stage' | 'intro' = 'stage';
-  private readonly player = new Player(DEFAULT_SPEED);
+  private readonly player = new Player(storage.get('speed', DEFAULT_SPEED));
   private readonly editor = new EditorView($('#editor-title'), $('#editor'));
-  private readonly tree = new TreeView($('#file-tree'));
-  private readonly doc = new DocView($('#doc'));
+  /** Monaco is big, so the editor loads only once a guide is opened */
+  private ide: IdeView | null = null;
+  private idePromise: Promise<IdeView> | null = null;
+  private readonly bubble = new BubbleView($('#bubble'), $('#bubble-chip'));
+  private readonly modalDoc = new DocView($('#modal-doc'));
   private readonly controls: ControlsView;
   private readonly shell: Shell;
+  private notes: StageNotes = { byCommit: new Map(), end: '' };
+  private notesOn = storage.get('notes', true);
+  private autopause = storage.get('autopause', true);
+  private followedPath = '';
+  private fillArmed = 0;
   private dirty = true;
 
   constructor() {
@@ -98,24 +118,44 @@ export class App implements ShellHost {
     this.player.onChange = () => {
       this.dirty = true;
     };
+    this.player.onCommit = (index) => this.commitStarted(index);
     this.player.onEnd = () => this.stageEnded();
 
     $('#stage-list').addEventListener('click', (event) => {
       const item = (event.target as HTMLElement).closest<HTMLElement>('[data-play]');
-      if (item?.dataset.play) this.shell.exec(`play ${item.dataset.play}`);
+      if (item?.dataset.play) {
+        document.body.classList.remove('drawer-open');
+        this.shell.exec(`play ${item.dataset.play}`);
+      }
     });
     $('#home').addEventListener('click', (event) => {
       const item = (event.target as HTMLElement).closest<HTMLElement>('[data-cmd]');
       if (item?.dataset.cmd) this.shell.exec(item.dataset.cmd);
     });
-    document.querySelectorAll<HTMLElement>('[data-doc]').forEach((tab) =>
-      tab.addEventListener('click', () => {
-        this.docMode = tab.dataset.doc === 'intro' ? 'intro' : 'stage';
-        this.renderDoc();
-      }),
+    document.querySelectorAll<HTMLElement>('[data-open-doc]').forEach((button) =>
+      button.addEventListener('click', () =>
+        this.shell.exec(button.dataset.openDoc === 'intro' ? 'read intro' : 'read'),
+      ),
     );
-    $('#toggle-side').addEventListener('click', () => document.body.classList.toggle('side-open'));
+    $('#toggle-drawer').addEventListener('click', () => document.body.classList.toggle('drawer-open'));
     $('#toggle-shell').addEventListener('click', () => document.body.classList.toggle('shell-tall'));
+    $('#modal-close').addEventListener('click', () => this.closeModal());
+    $('#modal').addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) this.closeModal();
+    });
+    const follow = $('#ide-follow') as HTMLInputElement;
+    follow.checked = storage.get('follow', true);
+    follow.addEventListener('change', () => {
+      if (this.ide) this.ide.follow = follow.checked;
+      storage.set('follow', follow.checked);
+      this.followedPath = '';
+      this.dirty = true;
+    });
+    $('#ide-compare').addEventListener('click', () => this.shell.exec('diff'));
+    $('#ide-fill').addEventListener('click', () => this.fill());
+    $('#ide-download').addEventListener('click', () => this.ide?.download());
+    // Capture phase, so Alt shortcuts work even while typing in the editor
+    document.addEventListener('keydown', (event) => this.onAltKey(event), true);
     document.addEventListener('keydown', (event) => this.onKey(event));
     window.addEventListener('hashchange', () => void this.route());
   }
@@ -142,12 +182,30 @@ export class App implements ShellHost {
     this.shell.focus();
   }
 
+  private loadIde(): Promise<IdeView> {
+    this.idePromise ??= import('./views/ide').then(({ IdeView }) => {
+      const ide = new IdeView($('#ide'), $('#ide-tabs'));
+      ide.follow = ($('#ide-follow') as HTMLInputElement).checked;
+      ide.onFilesChange = () => {
+        $('#ide-empty').hidden = ide.paths.length > 0;
+      };
+      this.ide = ide;
+      this.followedPath = '';
+      this.dirty = true;
+      return ide;
+    });
+    return this.idePromise;
+  }
+
   // ---------------------------------------------------------------- routing
 
   private async route(): Promise<void> {
-    const [slug, stage, commit] = decodeURIComponent(location.hash.replace(/^#\/?/, ''))
+    // Split before decoding: branch names like exp/refs are encoded as one part
+    const [slug, stage, commit] = location.hash
+      .replace(/^#\/?/, '')
       .split('/')
-      .filter(Boolean);
+      .filter(Boolean)
+      .map(decodeURIComponent);
     if (!slug) {
       this.leaveGuide();
       return;
@@ -198,10 +256,16 @@ export class App implements ShellHost {
     }
     this.guide = guide;
     document.body.classList.add('in-guide');
-    this.docMode = 'intro';
+    void this.loadIde().then((ide) => {
+      // The user may have left or switched guides while the editor was loading
+      if (this.guide?.slug === slug) ide.load(slug);
+      this.followedPath = '';
+      this.dirty = true;
+    });
+    this.followedPath = '';
     this.shell.printHtml(
       `<b>${escapeHtml(guide.title)}</b> — ${escapeHtml(guide.summary)}<br>` +
-        `<span class="muted">단계 ${guide.stages.length}개. </span><a data-cmd="play">play</a><span class="muted"> 로 첫 단계부터, </span><a data-cmd="stages">stages</a><span class="muted"> 로 목록을 봅니다.</span>`,
+        `<span class="muted">단계 ${guide.stages.length}개. </span><a data-cmd="play">play</a><span class="muted"> 로 첫 단계부터, </span><a data-cmd="stages">stages</a><span class="muted"> 로 목록을, </span><a data-cmd="read intro">read intro</a><span class="muted"> 로 소개를 봅니다.</span>`,
     );
     this.shell.updatePrompt();
     this.dirty = true;
@@ -212,6 +276,8 @@ export class App implements ShellHost {
     this.guide = null;
     this.player.playlist = null;
     this.player.pause();
+    this.bubble.clear();
+    this.ide?.unload();
     document.body.classList.remove('in-guide');
     this.shell.updatePrompt();
     this.setHash();
@@ -231,11 +297,7 @@ export class App implements ShellHost {
   private docFor(key: string | undefined): string {
     const guide = this.guide;
     if (!guide || !key) return '';
-    return (
-      guide.stages.find((s) => s.id === key)?.doc ??
-      guide.branches.find((b) => b.name === key)?.doc ??
-      ''
-    );
+    return guide.stages.find((s) => s.id === key)?.doc ?? guide.branches.find((b) => b.name === key)?.doc ?? '';
   }
 
   private playStage(key: string, commit = 0, autoplay = true): boolean {
@@ -245,13 +307,37 @@ export class App implements ShellHost {
       return false;
     }
     if (playlist.commits.length === 0) {
-      this.shell.print(`${key} 단계에는 재생할 커밋이 없습니다. 설명만 봅니다.`, 'muted');
+      this.shell.print(`${key} 단계에는 재생할 커밋이 없습니다. read 로 설명을 보세요.`, 'muted');
     }
+    this.notes = splitNotes(this.docFor(key), playlist.commits);
+    this.bubble.clear();
     this.player.load(playlist, commit, autoplay && playlist.commits.length > 0);
-    this.docMode = 'stage';
     this.setHash();
     this.dirty = true;
     return true;
+  }
+
+  // ---------------------------------------------------------------- narration
+
+  private commitStarted(index: number): void {
+    const key = this.player.playlist?.key;
+    const note = this.notes.byCommit.get(index);
+    if (!key || !note || !this.notesOn) {
+      this.bubble.collapse();
+      return;
+    }
+    const path = this.player.commit?.files[0]?.path ?? '';
+    const title = index === 0 ? '이 단계에서 할 일' : `다음 파일 · ${path}`;
+    this.bubble.show(`${key}:${index}`, title, note, [
+      { label: '계속 ▶ <kbd>Alt+Space</kbd>', primary: true, run: () => this.continueFromBubble() },
+      { label: '접어 두고 재생', run: () => this.continueFromBubble() },
+    ]);
+    if (this.autopause && this.player.playing) this.player.pause();
+  }
+
+  private continueFromBubble(): void {
+    this.bubble.collapse();
+    if (!this.player.ended) this.player.play();
   }
 
   private stageEnded(): void {
@@ -269,6 +355,77 @@ export class App implements ShellHost {
           ? `<span class="muted">다음 단계:</span> <a data-cmd="play ${escapeHtml(next.id)}">play ${escapeHtml(next.id)}</a> <span class="muted">— ${escapeHtml(stageTitle(next.id, next.title))}</span>`
           : '<span class="muted">마지막 단계입니다.</span>'),
     );
+    const body = this.notes.end || '이 단계의 코드를 모두 재생했습니다.';
+    const actions = [
+      ...(next
+        ? [{ label: `다음 단계 ${escapeHtml(next.id)} ▶`, primary: true, run: () => this.shell.exec(`play ${next.id}`) }]
+        : []),
+      { label: '이 단계 처음부터', run: () => this.shell.exec(`play ${key}`) },
+      { label: '접기', run: () => this.bubble.collapse() },
+    ];
+    this.bubble.show(`${key}:end`, '단계 마무리 — 확인해 볼 것', body, actions);
+  }
+
+  // ---------------------------------------------------------------- my code
+
+  private fill(): void {
+    const guide = this.guide;
+    const key = this.player.playlist?.key;
+    if (!guide || !key) {
+      this.shell.print('fill: 먼저 단계를 여세요.', 'error');
+      return;
+    }
+    const button = $('#ide-fill');
+    if (Date.now() - this.fillArmed > 4000) {
+      this.fillArmed = Date.now();
+      button.textContent = '정말 덮어쓸까요? 한 번 더';
+      button.classList.add('armed');
+      this.shell.print('fill: 내 코드를 지금 커밋 직전 상태로 덮어씁니다. 4초 안에 한 번 더 누르면 실행합니다. (되돌리기: 에디터에서 Ctrl/Cmd+Z)', 'muted');
+      window.setTimeout(() => {
+        button.textContent = '여기까지 채우기';
+        button.classList.remove('armed');
+      }, 4000);
+      return;
+    }
+    this.fillArmed = 0;
+    button.textContent = '여기까지 채우기';
+    button.classList.remove('armed');
+    const files = snapshotBefore(guide, key, this.player.commitIndex);
+    const current = this.player.commit?.files[this.player.state.file]?.path;
+    if (!this.ide) {
+      this.shell.print('fill: 에디터를 불러오는 중입니다. 잠시 뒤 다시 해 보세요.', 'muted');
+      return;
+    }
+    this.ide.replaceAll(files, current);
+    this.followedPath = '';
+    this.shell.print(`fill: 파일 ${files.size}개를 ${key} 단계 커밋 ${this.player.commitIndex + 1} 직전 상태로 채웠습니다.`, 'ok');
+  }
+
+  private diff(): void {
+    const guide = this.guide;
+    const key = this.player.playlist?.key;
+    const path = this.player.commit?.files[this.player.state.file]?.path ?? this.ide?.activePath;
+    if (!guide || !key || !path || !this.ide) {
+      this.shell.print('diff: 비교할 파일이 없습니다. 먼저 재생을 시작하세요.', 'error');
+      return;
+    }
+    const expected = snapshotBefore(guide, key, this.player.commitIndex + 1).get(path) ?? '';
+    this.openModal(`비교 · ${path}`, 'diff');
+    this.ide.showDiff($('#modal-diff'), path, expected);
+    this.shell.print(`diff: 왼쪽은 이 커밋이 끝난 모습, 오른쪽은 내 코드(편집 가능)입니다.`, 'muted');
+  }
+
+  private openModal(title: string, kind: 'doc' | 'diff'): void {
+    $('#modal-title').textContent = title;
+    $('#modal-doc').hidden = kind !== 'doc';
+    $('#modal-diff').hidden = kind !== 'diff';
+    $('#modal').hidden = false;
+    this.player.pause();
+  }
+
+  private closeModal(): void {
+    $('#modal').hidden = true;
+    this.ide?.closeDiff();
   }
 
   // ---------------------------------------------------------------- shell host
@@ -278,10 +435,11 @@ export class App implements ShellHost {
   }
 
   complete(words: string[], index: number): string[] {
-    const commands = ['help', 'ls', 'cd', 'open', 'play', 'read', 'stages', 'branches', 'pause', 'resume', 'restart', 'next', 'prev', 'speed', 'done', 'clear', 'keys'];
+    const commands = ['help', 'keys', 'ls', 'cd', 'play', 'read', 'stages', 'branches', 'pause', 'resume', 'restart', 'next', 'prev', 'speed', 'notes', 'autopause', 'fill', 'diff', 'done', 'clear'];
     if (index === 0) return commands;
     const command = words[0];
     if (command === 'cd' || command === 'open') return ['..', ...this.guides.map((g) => g.slug)];
+    if (command === 'notes' || command === 'autopause') return ['on', 'off'];
     if (command === 'play' || command === 'read' || command === 'done') {
       const stages = this.guide?.stages.map((s) => s.id) ?? [];
       const branches = this.guide?.branches.map((b) => b.name) ?? [];
@@ -296,7 +454,8 @@ export class App implements ShellHost {
     switch (command) {
       case 'help':
       case '?':
-        this.help();
+        this.printTable(HELP);
+        this.shell.printHtml('<span class="muted">단축키는</span> <a data-cmd="keys">keys</a>');
         break;
       case 'keys':
         this.printTable(KEYS);
@@ -307,11 +466,7 @@ export class App implements ShellHost {
         break;
       case 'cd':
       case 'open':
-        if (!arg || arg === '..' || arg === '~' || arg === '/') {
-          location.hash = '#/';
-        } else {
-          location.hash = `#/${encodeURIComponent(arg.replace(/\/$/, ''))}`;
-        }
+        location.hash = !arg || ['..', '~', '/'].includes(arg) ? '#/' : `#/${encodeURIComponent(arg.replace(/\/$/, ''))}`;
         break;
       case 'stages':
         if (this.requireGuide()) this.listStages();
@@ -329,7 +484,7 @@ export class App implements ShellHost {
         this.player.pause();
         break;
       case 'resume':
-        if (!this.player.playing) this.player.togglePlay();
+        this.player.play();
         break;
       case 'restart':
         this.player.restart();
@@ -343,10 +498,27 @@ export class App implements ShellHost {
       case 'speed':
         if (arg) {
           const ms = Number(arg);
-          if (Number.isFinite(ms) && ms > 0) this.player.setSpeed(ms);
+          if (Number.isFinite(ms) && ms > 0) this.setSpeed(ms);
           else this.shell.print('speed: 숫자(ms)를 주세요. 예: speed 60', 'error');
         }
         this.shell.print(`타이핑 속도 ${this.player.speedMs}ms / 글자`, 'muted');
+        break;
+      case 'notes':
+        this.notesOn = arg ? arg !== 'off' : !this.notesOn;
+        storage.set('notes', this.notesOn);
+        if (!this.notesOn) this.bubble.clear();
+        this.shell.print(`말풍선 설명 ${this.notesOn ? '켬' : '끔'}`, 'muted');
+        break;
+      case 'autopause':
+        this.autopause = arg ? arg !== 'off' : !this.autopause;
+        storage.set('autopause', this.autopause);
+        this.shell.print(`말풍선이 뜰 때 ${this.autopause ? '멈춤' : '멈추지 않음'}`, 'muted');
+        break;
+      case 'fill':
+        this.fill();
+        break;
+      case 'diff':
+        this.diff();
         break;
       case 'done':
         if (this.requireGuide()) this.toggleDone(arg);
@@ -354,19 +526,21 @@ export class App implements ShellHost {
       case 'clear':
         this.shell.clear();
         break;
-      case 'whoami':
-        this.shell.print('guest — 따라 치는 사람', 'muted');
-        break;
       case 'cargo':
       case 'git':
       case 'vim':
       case 'nvim':
-        this.shell.print(`${command}: 여기는 재생 전용 터미널입니다. 내 터미널에서 실행하세요.`, 'muted');
+        this.shell.print(`${command}: 여기는 재생 전용 터미널입니다. 빌드와 실행은 내 터미널에서 하세요.`, 'muted');
         break;
       default:
         this.shell.print(`${command}: 명령을 찾을 수 없습니다. help 를 입력해 보세요.`, 'error');
     }
     this.dirty = true;
+  }
+
+  private setSpeed(ms: number): void {
+    this.player.setSpeed(ms);
+    storage.set('speed', this.player.speedMs);
   }
 
   private requireGuide(): boolean {
@@ -377,16 +551,11 @@ export class App implements ShellHost {
 
   private banner(): void {
     this.shell.printHtml(
-      '<span class="accent">code-replay</span> <span class="muted">— Craft 가이드의 코드를 타이핑 애니메이션으로 재생합니다. 보면서 내 에디터에 따라 치세요.</span>',
+      '<span class="accent">code-replay</span> <span class="muted">— 오른쪽 재생을 보면서 왼쪽 에디터에 따라 치세요. 설명은 말풍선으로 나옵니다.</span>',
     );
     this.shell.printHtml(
-      '<span class="muted">명령어는 </span><a data-cmd="help">help</a><span class="muted">, 단축키는 </span><a data-cmd="keys">keys</a><span class="muted">. Esc 로 입력창을 벗어나면 단축키가 동작합니다.</span>',
+      '<span class="muted">명령어는 </span><a data-cmd="help">help</a><span class="muted">, 단축키는 </span><a data-cmd="keys">keys</a><span class="muted">. 에디터에서 치는 중에도 Alt+Space 로 재생을 멈추고 이어 갈 수 있습니다.</span>',
     );
-  }
-
-  private help(): void {
-    this.printTable(HELP);
-    this.shell.printHtml('<span class="muted">단축키는</span> <a data-cmd="keys">keys</a>');
   }
 
   private printTable(rows: Array<[string, string]>): void {
@@ -461,13 +630,21 @@ export class App implements ShellHost {
   }
 
   private read(arg: string | undefined): void {
+    const guide = this.guide;
+    if (!guide) return;
     if (arg === 'intro') {
-      this.docMode = 'intro';
-    } else if (arg) {
-      if (!this.playStage(arg, 0, false)) return;
+      this.openModal(`${guide.title} — 소개`, 'doc');
+      this.modalDoc.show(guide.intro || `# ${guide.title}\n\n${guide.summary}`);
+      return;
     }
-    if (arg !== 'intro') this.docMode = 'stage';
-    this.renderDoc();
+    const key = arg ?? this.player.playlist?.key ?? guide.stages[0]?.id;
+    const playlist = key ? this.playlistFor(key) : null;
+    if (!key || !playlist) {
+      this.shell.print(`read: ${arg}: 그런 단계가 없습니다.`, 'error');
+      return;
+    }
+    this.openModal(`${key} · ${playlist.title}`, 'doc');
+    this.modalDoc.show(this.docFor(key) || '(설명이 없습니다)');
   }
 
   private toggleDone(arg: string | undefined): void {
@@ -489,23 +666,49 @@ export class App implements ShellHost {
       prev: () => p.prev(),
       changeBack: () => p.changeBack(),
       lineBack: () => p.lineBack(),
-      toggle: () => p.togglePlay(),
+      toggle: () => (this.bubble.open && !p.playing && !p.ended ? this.continueFromBubble() : p.togglePlay()),
       lineForward: () => p.lineForward(),
       changeForward: () => p.changeForward(),
       next: () => p.next(),
       restart: () => p.restart(),
-      slower: () => p.changeSpeed(false),
-      faster: () => p.changeSpeed(true),
+      slower: () => this.setSpeed(p.speedMs + (p.speedMs < 20 ? 5 : p.speedMs < 100 ? 10 : 50)),
+      faster: () => this.setSpeed(p.speedMs - (p.speedMs <= 20 ? 5 : p.speedMs <= 100 ? 10 : 50)),
     };
     actions[action]();
   }
 
+  /** Alt shortcuts work everywhere, including inside the editor */
+  private onAltKey(event: KeyboardEvent): void {
+    if (!event.altKey || event.ctrlKey || event.metaKey || !this.guide) return;
+    const keys: Record<string, () => void> = {
+      Space: () => this.control('toggle'),
+      Comma: () => this.control('lineBack'),
+      Period: () => this.control('lineForward'),
+      BracketLeft: () => this.control('prev'),
+      BracketRight: () => this.control('next'),
+      Minus: () => this.control('slower'),
+      Equal: () => this.control('faster'),
+      Slash: () => this.shell.focus(),
+    };
+    const handler = keys[event.code];
+    if (handler) {
+      event.preventDefault();
+      event.stopPropagation();
+      handler();
+    }
+  }
+
   private onKey(event: KeyboardEvent): void {
+    if (event.key === 'Escape' && !$('#modal').hidden) {
+      this.closeModal();
+      return;
+    }
     if (this.shell.focused || event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target as HTMLElement;
-    if (target.closest('input, textarea, select')) return;
+    if (target.closest('input, textarea, select, .monaco-editor') || !$('#modal').hidden) return;
     const keys: Record<string, () => void> = {
       ' ': () => this.control('toggle'),
+      Enter: () => this.bubble.confirm(),
       h: () => this.control('lineBack'),
       l: () => this.control('lineForward'),
       H: () => this.control('changeBack'),
@@ -540,51 +743,47 @@ export class App implements ShellHost {
     if (!guide) {
       this.renderHome();
       this.editor.clear();
-      this.tree.render(null, -1);
       this.controls.render(p);
-      $('#commit-info').innerHTML = '';
       $('#stage-list').innerHTML = '';
       return;
     }
     this.editor.render(p.state, p.commit, p.playing);
-    this.tree.render(p.commit, p.state.file);
     this.controls.render(p);
     this.renderStages();
-    this.renderCommitInfo();
-    this.renderDoc();
+    const path = p.commit?.files[p.state.file]?.path ?? '';
+    if (path && this.ide && path !== this.followedPath) {
+      this.followedPath = path;
+      this.ide.followFile(path);
+    }
     this.setHash();
   }
 
   private renderHome(): void {
-    $('#home').innerHTML = `
+    const html = `
       <pre class="logo">  ___ ___  __| | ___       _ __ ___ _ __ | | __ _ _   _
  / __/ _ \\/ _\` |/ _ \\_____| '__/ _ \\ '_ \\| |/ _\` | | | |
 | (_| (_) | (_| |  __/_____| | |  __/ |_) | | (_| | |_| |
  \\___\\___/ \\__,_|\\___|     |_|  \\___| .__/|_|\\__,_|\\__, |
                                     |_|            |___/</pre>
-      <p class="muted">가이드를 고르거나, 아래 터미널에 <code>cd &lt;가이드&gt;</code> 를 입력하세요.</p>
+      <p class="home-lead">Craft 코딩 가이드의 완성 코드를 한 글자씩 재생합니다. 오른쪽 재생을 보며 왼쪽 에디터에 따라 치고, 설명은 말풍선으로 읽으세요.</p>
       <ul class="guide-list">${this.guides
         .map(
           (g) => `<li><button type="button" data-cmd="cd ${escapeHtml(g.slug)}">
             <span class="guide-slug">${escapeHtml(g.slug)}</span>
             <span class="guide-title">${escapeHtml(g.title)}</span>
             <span class="guide-summary">${escapeHtml(g.summary)}</span>
-            <span class="guide-meta">단계 ${g.stageCount} · 커밋 ${g.commitCount}</span>
+            <span class="guide-meta">단계 ${g.stageCount} · 커밋 ${g.commitCount}${progressStore.get(g.slug).size ? ` · 완료 ${progressStore.get(g.slug).size}` : ''}</span>
           </button></li>`,
         )
-        .join('')}</ul>`;
-    this.doc.show(
-      `<h1>code-replay</h1>
-      <p>Craft 에 정리해 둔 코딩 가이드를 단계별 완성 코드로 다시 쌓고, 그 커밋들을 타이핑 애니메이션으로 재생합니다.</p>
-      <ol>
-        <li>가이드를 열고 <code>play</code> 로 단계를 재생합니다.</li>
-        <li>왼쪽 에디터에서 코드가 한 글자씩 쳐지는 걸 보며 내 에디터에 따라 칩니다.</li>
-        <li>오른쪽에는 그 단계의 설명이 있습니다. 왜 이렇게 짜는지 먼저 읽어 두세요.</li>
-        <li>놓치면 <kbd>Space</kbd> 로 멈추고 <kbd>h</kbd> 로 한 줄씩 되감습니다.</li>
-      </ol>
-      <p class="muted">완료한 단계는 이 브라우저에만 기억됩니다.</p>`,
-      true,
-    );
+        .join('')}</ul>
+      <div class="home-help markdown">${renderMarkdown(
+        '**쓰는 법** — 가이드를 고르고 `play` 로 단계를 재생합니다. 말풍선이 뜨면 읽고 **계속**(Alt+Space). 놓치면 `Alt+,` 로 한 줄 되감기, 내 코드와 다르면 **비교**. 중간 단계부터 시작하면 **여기까지 채우기**로 앞 단계 파일을 채웁니다.',
+      )}</div>`;
+    const home = $('#home');
+    if (home.dataset.html !== html) {
+      home.dataset.html = html;
+      home.innerHTML = html;
+    }
   }
 
   private renderStages(): void {
@@ -597,78 +796,12 @@ export class App implements ShellHost {
         <button type="button" data-play="${escapeHtml(key)}"><span class="stage-id">${escapeHtml(label)}</span><span class="stage-title">${escapeHtml(title)}</span></button></li>`;
     const html = [
       ...guide.stages.map((s) => item(s.id, s.id, stageTitle(s.id, s.title))),
-      ...guide.branches.map((b) => item(b.name, '⑂', `${b.title}`, 'branch')),
+      ...guide.branches.map((b) => item(b.name, '⑂', b.title, 'branch')),
     ].join('');
     const list = $('#stage-list');
     if (list.dataset.html !== html) {
       list.dataset.html = html;
       list.innerHTML = html;
-      list.querySelector('.current')?.scrollIntoView({ block: 'nearest' });
     }
-  }
-
-  private renderCommitInfo(): void {
-    const c = this.player.commit;
-    const info = $('#commit-info');
-    if (!c) {
-      info.innerHTML = '';
-      return;
-    }
-    const files = c.files
-      .map((f, i) => `<span class="${i === this.player.state.file ? 'current' : ''} status-${f.status}">${escapeHtml(f.path.split('/').pop() ?? f.path)}</span>`)
-      .join(' ');
-    const html = `<div><span class="label">commit</span> <span class="hash">${escapeHtml(c.hash)}</span></div>
-      <div class="message">${escapeHtml(c.message)}</div>
-      <div class="files">${files}</div>`;
-    if (info.dataset.html !== html) {
-      info.dataset.html = html;
-      info.innerHTML = html;
-    }
-  }
-
-  private renderDoc(): void {
-    const guide = this.guide;
-    if (!guide) return;
-    document.querySelectorAll<HTMLElement>('[data-doc]').forEach((tab) =>
-      tab.classList.toggle('active', tab.dataset.doc === this.docMode),
-    );
-    const source =
-      this.docMode === 'intro'
-        ? guide.intro || `# ${guide.title}\n\n${guide.summary}`
-        : this.docFor(this.player.playlist?.key) || `# ${this.player.playlist?.title ?? ''}\n\n(설명이 없습니다)`;
-    if (this.doc.show(source)) this.linkFileMarkers();
-    this.highlightFileMarker();
-  }
-
-  /** "▶ `path` — 재생에서 따라 칩니다" lines jump to the commit that types that file */
-  private linkFileMarkers(): void {
-    const commits = this.player.playlist?.commits ?? [];
-    const seen = new Map<string, number>();
-    $('#doc')
-      .querySelectorAll<HTMLElement>('p')
-      .forEach((p) => {
-        const code = p.querySelector('code');
-        if (!p.textContent?.trimStart().startsWith('▶') || !code?.textContent) return;
-        const path = code.textContent.trim();
-        // The n-th marker for a file points at the n-th commit that touches it
-        const nth = seen.get(path) ?? 0;
-        seen.set(path, nth + 1);
-        const matches = commits
-          .map((c, i) => (c.files.some((f) => f.path === path || f.path.endsWith(`/${path}`)) ? i : -1))
-          .filter((i) => i >= 0);
-        const target = matches[Math.min(nth, matches.length - 1)];
-        if (target === undefined) return;
-        p.classList.add('file-jump');
-        p.dataset.commit = String(target);
-        p.title = `커밋 ${target + 1} 로 이동해 재생`;
-        p.addEventListener('click', () => this.player.seekCommit(target));
-      });
-  }
-
-  private highlightFileMarker(): void {
-    const current = String(this.player.commitIndex);
-    $('#doc')
-      .querySelectorAll<HTMLElement>('p.file-jump')
-      .forEach((p) => p.classList.toggle('playing', p.dataset.commit === current));
   }
 }

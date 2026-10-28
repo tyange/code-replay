@@ -35,6 +35,8 @@ export class Player {
   onChange: () => void = () => {};
   /** Called once when the last commit of the playlist has been typed */
   onEnd: () => void = () => {};
+  /** Called after a commit is loaded, before any of it is typed */
+  onCommit: (index: number) => void = () => {};
 
   private nextAt = 0;
   private advanceAt: number | null = null;
@@ -70,6 +72,7 @@ export class Player {
     this.advanceAt = null;
     this.playing = autoplay;
     this.nextAt = performance.now();
+    this.onCommit(this.commitIndex);
     this.onChange();
   }
 
@@ -132,6 +135,10 @@ export class Player {
     this.onChange();
   }
 
+  play(): void {
+    if (!this.playing) this.togglePlay();
+  }
+
   lineBack(): void {
     this.playing = false;
     this.seekStep(stopBefore(this.plan.lineStops, this.step));
@@ -168,12 +175,14 @@ export class Player {
       this.loadCommit(this.commitIndex + 1, true);
       return;
     }
-    if (!auto) this.seekStep(this.plan.steps.length);
+    // Pressing next again at the end shouldn't announce the end twice
+    const alreadyEnded = this.ended;
+    if (!auto && !alreadyEnded) this.seekStep(this.plan.steps.length);
     this.playing = false;
     this.ended = true;
     this.advanceAt = null;
     this.onChange();
-    this.onEnd();
+    if (!alreadyEnded) this.onEnd();
   }
 
   seekCommit(index: number): void {
