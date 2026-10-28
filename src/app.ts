@@ -63,7 +63,7 @@ const HELP: Array<[string, string]> = [
   ['speed [ms]', '타이핑 속도 (글자당 ms, 작을수록 빠름)'],
   ['notes on|off', '말풍선 설명 켜기 / 끄기'],
   ['autopause on|off', '말풍선이 뜰 때 멈추기'],
-  ['fill', '내 코드를 이 커밋 직전 상태로 채우기'],
+  ['fill', '앞 단계까지의 코드로 내 파일 채우기 (같은 이름 파일만 덮어씀)'],
   ['diff', '내 코드와 재생 코드 비교'],
   ['done [단계]', '단계를 완료로 표시 / 해제'],
   ['clear', '화면 지우기 (Ctrl+L)'],
@@ -99,7 +99,6 @@ export class App implements ShellHost {
   private notesOn = storage.get('notes', true);
   private autopause = storage.get('autopause', true);
   private followedPath = '';
-  private fillArmed = 0;
   private dirty = true;
 
   constructor() {
@@ -152,7 +151,6 @@ export class App implements ShellHost {
       this.dirty = true;
     });
     $('#ide-compare').addEventListener('click', () => this.shell.exec('diff'));
-    $('#ide-fill').addEventListener('click', () => this.fill());
     $('#ide-download').addEventListener('click', () => this.ide?.download());
     // Capture phase, so Alt shortcuts work even while typing in the editor
     document.addEventListener('keydown', (event) => this.onAltKey(event), true);
@@ -258,9 +256,12 @@ export class App implements ShellHost {
     document.body.classList.add('in-guide');
     void this.loadIde().then((ide) => {
       // The user may have left or switched guides while the editor was loading
-      if (this.guide?.slug === slug) ide.load(slug);
+      if (this.guide?.slug !== slug) return;
+      ide.load(slug);
       this.followedPath = '';
       this.dirty = true;
+      // The opening bubble was shown before the editor existed; offer filling now that we can compare
+      if (this.player.commitIndex === 0 && this.player.step <= 1) this.commitStarted(0);
     });
     this.followedPath = '';
     this.shell.printHtml(
@@ -321,18 +322,37 @@ export class App implements ShellHost {
 
   private commitStarted(index: number): void {
     const key = this.player.playlist?.key;
-    const note = this.notes.byCommit.get(index);
-    if (!key || !note || !this.notesOn) {
+    const missing = index === 0 ? this.missingEarlierFiles() : 0;
+    const note = this.notesOn ? this.notes.byCommit.get(index) : undefined;
+    if (!key || (!note && !missing)) {
       this.bubble.collapse();
       return;
     }
     const path = this.player.commit?.files[0]?.path ?? '';
     const title = index === 0 ? '이 단계에서 할 일' : `다음 파일 · ${path}`;
-    this.bubble.show(`${key}:${index}`, title, note, [
+    const offer = missing
+      ? `> 내 코드에 앞 단계까지의 파일 ${missing}개가 없거나 다릅니다. 이 단계부터 바로 따라 치려면 **앞 단계 코드 채우기**를 누르세요. 같은 이름 파일만 덮어쓰고 다른 파일은 그대로 둡니다.\n\n`
+      : '';
+    this.bubble.show(`${key}:${index}:${missing}`, title, offer + (note ?? ''), [
       { label: '계속 ▶ <kbd>Alt+Space</kbd>', primary: true, run: () => this.continueFromBubble() },
+      ...(missing ? [{ label: '앞 단계 코드 채우기', run: () => this.fill() }] : []),
       { label: '접어 두고 재생', run: () => this.continueFromBubble() },
     ]);
     if (this.autopause && this.player.playing) this.player.pause();
+  }
+
+  /** How many files from earlier stages are absent from (or differ in) the user's code */
+  private missingEarlierFiles(): number {
+    const guide = this.guide;
+    const key = this.player.playlist?.key;
+    if (!guide || !key || !this.ide) return 0;
+    const normalize = (text: string) => text.replace(/[ \t]+$/gm, '').trimEnd();
+    let missing = 0;
+    for (const [path, content] of snapshotBefore(guide, key, 0)) {
+      const mine = this.ide.contentOf(path);
+      if (mine === undefined || normalize(mine) !== normalize(content)) missing++;
+    }
+    return missing;
   }
 
   private continueFromBubble(): void {
@@ -368,37 +388,24 @@ export class App implements ShellHost {
 
   // ---------------------------------------------------------------- my code
 
+  /** Writes the code of everything before the current commit into the user's files */
   private fill(): void {
     const guide = this.guide;
     const key = this.player.playlist?.key;
-    if (!guide || !key) {
+    if (!guide || !key || !this.ide) {
       this.shell.print('fill: 먼저 단계를 여세요.', 'error');
       return;
     }
-    const button = $('#ide-fill');
-    if (Date.now() - this.fillArmed > 4000) {
-      this.fillArmed = Date.now();
-      button.textContent = '정말 덮어쓸까요? 한 번 더';
-      button.classList.add('armed');
-      this.shell.print('fill: 내 코드를 지금 커밋 직전 상태로 덮어씁니다. 4초 안에 한 번 더 누르면 실행합니다. (되돌리기: 에디터에서 Ctrl/Cmd+Z)', 'muted');
-      window.setTimeout(() => {
-        button.textContent = '여기까지 채우기';
-        button.classList.remove('armed');
-      }, 4000);
-      return;
-    }
-    this.fillArmed = 0;
-    button.textContent = '여기까지 채우기';
-    button.classList.remove('armed');
     const files = snapshotBefore(guide, key, this.player.commitIndex);
-    const current = this.player.commit?.files[this.player.state.file]?.path;
-    if (!this.ide) {
-      this.shell.print('fill: 에디터를 불러오는 중입니다. 잠시 뒤 다시 해 보세요.', 'muted');
+    if (files.size === 0) {
+      this.shell.print('fill: 채울 앞 단계 코드가 없습니다. 첫 커밋부터 따라 치면 됩니다.', 'muted');
       return;
     }
-    this.ide.replaceAll(files, current);
+    const current = this.player.commit?.files[this.player.state.file]?.path;
+    this.ide.writeFiles(files, current);
     this.followedPath = '';
-    this.shell.print(`fill: 파일 ${files.size}개를 ${key} 단계 커밋 ${this.player.commitIndex + 1} 직전 상태로 채웠습니다.`, 'ok');
+    this.shell.print(`fill: 앞 단계까지의 파일 ${files.size}개를 채웠습니다. 에디터에서 Cmd/Ctrl+Z 로 되돌릴 수 있습니다.`, 'ok');
+    if (this.player.commitIndex === 0) this.commitStarted(0);
   }
 
   private diff(): void {

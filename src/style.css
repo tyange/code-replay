@@ -232,11 +232,6 @@ body:not(.in-guide) .guide-only {
   border-color: var(--accent);
 }
 
-.ide-tools button.armed {
-  border-color: var(--red);
-  color: var(--red);
-}
-
 .toggle {
   display: flex;
   align-items: center;

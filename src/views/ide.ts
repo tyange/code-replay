@@ -149,32 +149,21 @@ export class IdeView {
     return this.models.get(path)?.getValue();
   }
 
-  /** Replaces every file with the given snapshot */
-  replaceAll(files: Snapshot, activePath?: string): void {
-    for (const [path, model] of this.models) {
-      if (!files.has(path)) {
-        model.dispose();
-        this.models.delete(path);
-      }
-    }
+  /** Writes the given files, overwriting same-named ones. Other files are left alone */
+  writeFiles(files: Snapshot, activePath?: string): void {
     for (const [path, content] of files) {
       const model = this.models.get(path);
-      if (model) {
+      if (!model) {
+        this.createModel(path, content);
+      } else if (model.getValue() !== content) {
         // pushEditOperations keeps this undoable
         model.pushEditOperations([], [{ range: model.getFullModelRange(), text: content }], () => null);
-      } else {
-        this.createModel(path, content);
       }
     }
-    const target = activePath && this.models.has(activePath) ? activePath : this.paths[0];
+    const target = activePath && this.models.has(activePath) ? activePath : (this.active || this.paths[0]);
     if (target) this.open(target);
-    else this.editor.setModel(null);
     this.saveNow();
     this.renderTabs();
-  }
-
-  clearAll(): void {
-    this.replaceAll(new Map());
   }
 
   download(path = this.active): void {
