@@ -1,3 +1,5 @@
 node_modules
 dist
 .DS_Store
+# Generated from sessions/ by scripts/export.mjs
+public/data/

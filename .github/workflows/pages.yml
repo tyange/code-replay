@@ -26,6 +26,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+      # The session files in sessions/ are the source; the JSON the site reads is made here
+      - run: node scripts/export.mjs sessions
       - run: pnpm build
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -58,7 +58,11 @@ VS Code 의 **통합 브라우저(Integrated Browser)** 에 띄웁니다. (예�
 | `code-replay path` | 세션 폴더 경로 |
 | `code-replay theme add\|list\|remove` | VS Code 테마 파일 관리 |
 
-- 세션 폴더: `~/.code-replay/sessions` (`--dir` 또는 환경변수 `CODE_REPLAY_HOME` 으로 변경)
+- 세션 원본은 이 저장소의 `sessions/` 에 있습니다. CLI 가 읽는 `~/.code-replay/sessions` 를 이 폴더로 링크해 두면, 세션을 넣고 빼는 것이 곧 git 변경이 됩니다.
+  ```bash
+  ln -s "$PWD/sessions" ~/.code-replay/sessions
+  ```
+  (`--dir` 또는 환경변수 `CODE_REPLAY_HOME` 으로 다른 폴더를 쓸 수도 있습니다)
 - 서버가 켜진 동안 파일을 넣거나 지우면 터미널에 바뀐 목록이 뜨고, 브라우저를 새로고침하면 반영됩니다.
 - 이름이 `_` 로 시작하는 파일은 무시합니다(작성 중인 초안용).
 
@@ -119,9 +123,11 @@ branches:                # 선택: 단계 끝에서 갈라지는 실험
 
 ## 정적 사이트로 배포 (선택)
 
+`sessions/` 를 커밋해 main 에 push 하면, GitHub Actions 가 세션 파일에서 사이트용 JSON 을 만들어(`scripts/export.mjs`) GitHub Pages 로 배포합니다. JSON(`public/data/`)은 커밋하지 않습니다. 저장소 Settings → Pages → Source 를 **GitHub Actions** 로 두어야 합니다.
+
 ```bash
-pnpm export      # 세션 폴더 → public/data/*.json (publish: false 인 세션은 제외)
-pnpm build       # dist/ 를 아무 정적 호스팅에 올리면 됩니다
+pnpm export      # 로컬에서 확인할 때: sessions/ → public/data/*.json (publish: false 인 세션은 제외)
+pnpm build
 ```
 
-main 에 push 하면 GitHub Actions 가 `public/data` 를 담아 Pages 로 배포합니다.
+Pages 판은 세션이 배포 시점으로 고정되고, `theme add` 로 넣은 내 테마는 없습니다(기본 테마는 모두 있음).
