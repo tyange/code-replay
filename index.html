@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>code-replay</title>
+    <meta name="description" content="Craft 코딩 가이드의 코드를 타이핑 애니메이션으로 재생하고, 단계 설명을 옆에 보여 주는 따라 치기 플레이어" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1b26'/%3E%3Ctext x='5' y='23' font-family='monospace' font-size='18' fill='%237aa2f7'%3E%3E_%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Nanum+Gothic+Coding:wght@400;700&family=Noto+Sans+KR:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <button type="button" id="toggle-side" class="icon-button" aria-label="단계 목록 열기">☰</button>
+      <a class="brand" href="#/">&gt;_ code-replay</a>
+      <span id="crumbs" class="crumbs"></span>
+    </header>
+
+    <main class="workspace">
+      <aside class="side">
+        <section class="panel stages-panel">
+          <h2>STAGES</h2>
+          <ol id="stage-list" class="stage-list"></ol>
+        </section>
+        <section class="panel files-panel">
+          <h2>FILES</h2>
+          <div id="file-tree" class="file-tree"></div>
+        </section>
+        <section class="panel commit-panel">
+          <div id="commit-info" class="commit-info"></div>
+        </section>
+      </aside>
+
+      <section class="editor-pane">
+        <div id="editor-title" class="editor-title"></div>
+        <div id="editor" class="editor" aria-live="off"></div>
+        <div id="home" class="home"></div>
+      </section>
+
+      <aside class="doc-pane">
+        <nav class="doc-tabs">
+          <button type="button" data-doc="stage">단계 설명</button>
+          <button type="button" data-doc="intro">가이드 소개</button>
+        </nav>
+        <article id="doc" class="markdown"></article>
+      </aside>
+    </main>
+
+    <section id="controls" class="controls"></section>
+
+    <section class="shell">
+      <button type="button" id="toggle-shell" class="icon-button shell-size" aria-label="터미널 크기 바꾸기">↕</button>
+      <div id="shell-log" class="shell-log"></div>
+      <form id="shell-form" class="shell-form">
+        <label for="shell-input" id="shell-prompt" class="prompt"></label>
+        <input
+          id="shell-input"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="help · ls · cd <가이드> · play"
+        />
+      </form>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
