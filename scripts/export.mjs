@@ -4,7 +4,7 @@
 //
 // Each <source>/<slug>/guide.json is described in code-replay-src/CONTRACT.md.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -145,6 +145,8 @@ function exportGuide(base) {
   };
 }
 
+// Start from an empty data folder so guides that were removed or unpublished don't linger
+rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 const order = existsSync(join(sourceDir, 'order.json'))
   ? JSON.parse(readFileSync(join(sourceDir, 'order.json'), 'utf8'))
@@ -152,6 +154,8 @@ const order = existsSync(join(sourceDir, 'order.json'))
 const slugs = readdirSync(sourceDir)
   .filter((name) => statSync(join(sourceDir, name)).isDirectory())
   .filter((name) => existsSync(join(sourceDir, name, 'guide.json')))
+  // `"publish": false` keeps a guide out of the site
+  .filter((name) => JSON.parse(readFileSync(join(sourceDir, name, 'guide.json'), 'utf8')).publish !== false)
   .sort((a, b) => {
     const ia = order.indexOf(a);
     const ib = order.indexOf(b);
