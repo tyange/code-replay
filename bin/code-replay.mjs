@@ -260,7 +260,11 @@ async function serve(flags) {
   if (index.length === 0) console.log(`     ${dim('세션이 없습니다.')} ${cyan('code-replay add <파일>')} ${dim('또는')} ${cyan('code-replay import <폴더>')}`);
   const themes = loadThemes();
   if (themes.length) console.log(`  ${green('➜')}  ${bold('Themes')}:   ${themes.map((t) => t.theme.name).join(', ')}`);
-  console.log(`\n  ${dim('VS Code 안에서 보려면:')} Cmd/Ctrl+Shift+P → ${bold('Simple Browser: Show')} → ${cyan(url)}`);
+  console.log(`\n  ${dim('VS Code 안에서 보려면:')} Cmd/Ctrl+Shift+P → ${bold('Open Integrated Browser')} → ${cyan(url)}`);
+  if (process.env.TERM_PROGRAM === 'vscode') {
+    // Inside VS Code's terminal, Cmd/Ctrl+click on a localhost link can open the integrated browser directly
+    console.log(`  ${dim('설정 workbench.browser.openLocalhostLinks 를 켜 두면 위 주소를 Cmd/Ctrl+클릭해도 통합 브라우저로 열립니다')}`);
+  }
   console.log(`  ${dim('종료는 Ctrl+C')}\n`);
   if (flags.open) openBrowser(url);
 

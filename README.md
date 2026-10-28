@@ -1,6 +1,6 @@
 # code-replay
 
-가이드의 **단계별 완성 코드**를 타이핑 애니메이션으로 재생하는 따라 치기 도구입니다. VS Code 내장 브라우저(Simple Browser)에 띄워 두고, 옆 에디터에서 직접 따라 칩니다. 터미널에서 `code-replay` 를 실행하면 로컬 서버가 뜨고, 안내된 주소로 들어가 쓰면 됩니다. 가이드 하나는 **세션 파일 하나**(YAML · JSON · TOML)이고, 세션 폴더에 파일을 넣고 빼는 것으로 학습 세션을 추가하고 제거합니다.
+가이드의 **단계별 완성 코드**를 타이핑 애니메이션으로 재생하는 따라 치기 도구입니다. VS Code 통합 브라우저(Integrated Browser)에 띄워 두고, 옆 에디터에서 직접 따라 칩니다. 터미널에서 `code-replay` 를 실행하면 로컬 서버가 뜨고, 안내된 주소로 들어가 쓰면 됩니다. 가이드 하나는 **세션 파일 하나**(YAML · JSON · TOML)이고, 세션 폴더에 파일을 넣고 빼는 것으로 학습 세션을 추가하고 제거합니다.
 
 ## 설치
 
@@ -27,11 +27,12 @@ code-replay            # 또는 code-replay serve --open
 
 ### VS Code 안에서 보기
 
-1. 터미널에서 `code-replay` 실행.
-2. VS Code 에서 `Cmd/Ctrl+Shift+P` → **Simple Browser: Show** → `http://localhost:5170/`.
-3. 탭을 옆으로 끌어 에디터와 나란히 두고, 재생을 보며 내 파일에 따라 칩니다. 설명은 재생 중에 말풍선으로 나옵니다.
+VS Code 의 **통합 브라우저(Integrated Browser)** 에 띄웁니다. (예전 문서의 Simple Browser 는 최신 VS Code 에서 통합 브라우저로 바뀌었습니다.)
 
-일반 브라우저로 봐도 똑같이 동작합니다.
+- `Cmd/Ctrl+Shift+P` → **Open Integrated Browser** → 주소(`http://localhost:5170/`) 입력.
+- 설정 `workbench.browser.openLocalhostLinks` 를 켜 두면, VS Code 터미널에 찍힌 주소를 `Cmd/Ctrl+클릭`하는 것만으로 통합 브라우저에서 열립니다. (기본값은 꺼짐)
+
+탭을 에디터 옆으로 끌어 두고, 재생을 보며 내 파일에 따라 칩니다. 일반 브라우저로 봐도 똑같이 동작합니다.
 
 ### 테마와 글꼴
 
