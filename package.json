@@ -19,7 +19,13 @@
     "dompurify": "^3.4.17",
     "highlight.js": "^11.12.0",
     "marked": "^18.1.2",
-    "monaco-editor": "^0.57.0"
+    "monaco-editor": "^0.57.0",
+    "smol-toml": "^1.9.1",
+    "yaml": "^2.9.1"
   },
-  "packageManager": "pnpm@12.14.0"
+  "packageManager": "pnpm@12.14.0",
+  "version": "0.1.0",
+  "bin": {
+    "code-replay": "bin/code-replay.mjs"
+  }
 }

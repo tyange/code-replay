@@ -19,8 +19,15 @@
       <a class="brand" href="#/">&gt;_ code-replay</a>
       <span id="crumbs" class="crumbs"></span>
       <span class="spacer"></span>
-      <button type="button" class="icon-button guide-only" data-open-doc="stage" title="이 단계 설명 전체 (read)">단계 설명</button>
-      <button type="button" class="icon-button guide-only" data-open-doc="intro" title="가이드 소개 (read intro)">소개</button>
+      <button type="button" class="icon-button guide-only" data-open-doc="stage" title="이 단계 설명 전체">단계 설명</button>
+      <button type="button" class="icon-button guide-only" data-open-doc="intro" title="가이드 소개">소개</button>
+      <button type="button" id="open-keys" class="icon-button" title="단축키 (?)" aria-label="단축키">⌨</button>
+      <button type="button" id="open-settings" class="icon-button" title="설정" aria-label="설정">⚙</button>
+      <div id="settings" class="settings" hidden>
+        <label><input type="checkbox" id="set-notes" /> 설명을 말풍선으로 보기</label>
+        <label><input type="checkbox" id="set-autopause" /> 말풍선이 뜨면 재생 멈추기</label>
+        <label><input type="checkbox" id="ide-follow" /> 재생 파일을 내 코드에서 따라 열기</label>
+      </div>
     </header>
 
     <main class="workspace">
@@ -29,9 +36,6 @@
           <span class="pane-label">내 코드</span>
           <div id="ide-tabs" class="ide-tabs"></div>
           <div class="ide-tools">
-            <label class="toggle" title="재생이 다른 파일로 넘어가면 같은 파일을 엽니다">
-              <input type="checkbox" id="ide-follow" checked /> 따라가기
-            </label>
             <button type="button" id="ide-compare" title="내 코드와 재생 코드를 나란히 비교">비교</button>
             <button type="button" id="ide-download" title="지금 파일 다운로드">↓</button>
           </div>
@@ -60,20 +64,7 @@
 
     <section id="controls" class="controls"></section>
 
-    <section class="shell">
-      <button type="button" id="toggle-shell" class="icon-button shell-size" aria-label="터미널 크기 바꾸기">↕</button>
-      <div id="shell-log" class="shell-log"></div>
-      <form id="shell-form" class="shell-form">
-        <label for="shell-input" id="shell-prompt" class="prompt"></label>
-        <input
-          id="shell-input"
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          placeholder="help · ls · cd <가이드> · play"
-        />
-      </form>
-    </section>
+    <div id="toast" class="toast" role="status" hidden></div>
 
     <div id="modal" class="modal" hidden>
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">

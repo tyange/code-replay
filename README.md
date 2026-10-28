@@ -1,60 +1,108 @@
 # code-replay
 
-Craft 에 정리해 둔 코딩 가이드를 **단계별 완성 코드**로 다시 쌓고, 그 커밋들을 브라우저에서 타이핑 애니메이션으로 재생하는 따라 치기 플레이어입니다. 왼쪽은 내가 치는 에디터(Monaco), 오른쪽은 재생 화면이고, 가이드 설명은 재생 중에 말풍선으로 나옵니다. 아래에는 터미널처럼 쓰는 명령 줄이 있습니다.
+가이드의 **단계별 완성 코드**를 브라우저에서 타이핑 애니메이션으로 재생하고, 옆의 에디터에서 따라 치는 학습 도구입니다. 터미널에서 `code-replay` 를 실행하면 로컬 서버가 뜨고, 안내된 주소로 들어가 쓰면 됩니다. 가이드 하나는 **세션 파일 하나**(YAML · JSON · TOML)이고, 세션 폴더에 파일을 넣고 빼는 것으로 학습 세션을 추가하고 제거합니다.
 
-## 쓰는 법
+## 설치
 
-1. 홈에서 가이드 카드를 누르거나 터미널에 `cd <가이드>` → `play`.
-2. 단계가 시작되면 말풍선에 "이 단계에서 할 일" 이 뜨고 재생이 멈춥니다. 읽고 **계속**(`Alt+Space`).
-3. 오른쪽에서 코드가 한 글자씩 쳐지는 걸 보며 왼쪽 **내 코드** 에 따라 칩니다. 재생이 새 파일로 넘어가면 내 코드도 같은 파일을 엽니다(따라가기).
-4. 새 파일로 넘어갈 때마다 그 파일에 대한 설명 말풍선이 뜹니다. 단계가 끝나면 확인할 것과 다음 단계 버튼이 나옵니다.
-5. 내 코드는 이 브라우저에 자동 저장됩니다. **비교** 로 재생 코드와 diff 를 봅니다. 중간 단계부터 시작해서 앞 단계 코드가 없으면, 단계 시작 말풍선에 **앞 단계 코드 채우기** 가 나옵니다(같은 이름 파일만 덮어씀).
+```bash
+git clone git@github-personal:tyange/code-replay.git
+cd code-replay
+pnpm install
+pnpm build
+ln -s "$PWD/bin/code-replay.mjs" ~/bin/code-replay   # ~/bin 이 PATH 에 있어야 합니다
+```
 
-에디터 안에서 치는 중에도 `Alt` 단축키로 재생을 조작할 수 있습니다. 브라우저 안이라 빌드·실행·자동완성(rust-analyzer)은 없으니, 빌드는 내 터미널에서 하세요.
+## 실행
 
-### 단축키
+```bash
+code-replay            # 또는 code-replay serve --open
+```
 
-| 키 | 동작 |
-| --- | --- |
-| `Alt+Space` | 재생 / 일시정지, 말풍선 계속 |
-| `Alt+,` `Alt+.` | 한 줄 뒤로 / 앞으로 |
-| `Alt+[` `Alt+]` | 이전 / 다음 커밋 |
-| `Alt+-` `Alt+=` | 느리게 / 빠르게 |
-| `Alt+/` | 명령어 입력 |
+```
+  code-replay v0.1.0  ready in 322 ms
 
-에디터 밖에서는 `Space`, `h` `l`, `H` `L`, `p` `n`, `[` `]`(이전/다음 단계), `r` 도 됩니다.
+  ➜  Local:    http://localhost:5170/
+  ➜  Sessions: 4개 (~/.code-replay/sessions)
+```
 
-### 터미널 명령
+주소로 들어가 가이드를 고르면, 오른쪽에서 코드가 한 글자씩 쳐지고 왼쪽 **내 코드** 에디터(Monaco)에 따라 칩니다. 가이드 설명은 재생 중에 말풍선으로 나옵니다.
+
+## 세션 관리
 
 | 명령 | 하는 일 |
 | --- | --- |
-| `ls` | 가이드 목록 (가이드 안에서는 단계 목록) |
-| `cd <가이드>` / `cd ..` | 가이드 열기 / 나가기 |
-| `play [단계]` | 단계 재생. `play next`, `play prev` |
-| `read [단계\|intro]` | 설명 전체 / 가이드 소개 |
-| `stages`, `branches` | 단계 / 실험 브랜치 목록 |
-| `pause`, `resume`, `restart`, `next`, `prev` | 재생 제어 |
-| `speed [ms]` | 타이핑 속도 (글자당 ms) |
-| `notes on\|off`, `autopause on\|off` | 말풍선 켜기·끄기 / 말풍선에서 멈추기 |
-| `fill`, `diff` | 앞 단계 코드 채우기 / 비교 |
-| `done [단계]` | 완료 표시 토글 |
-| `help`, `keys`, `clear` | 도움말, 단축키, 지우기 |
+| `code-replay list` | 세션 목록 |
+| `code-replay add <파일...>` | 세션 파일을 세션 폴더에 복사 (`--force` 로 같은 slug 덮어쓰기) |
+| `code-replay remove <slug>` | 세션 삭제 (`-y` 로 확인 생략) |
+| `code-replay import <폴더>` | `guide.json` + git 저장소 형식 가이드를 세션 파일로 변환 (`--format yaml\|json\|toml`) |
+| `code-replay new <slug>` | 빈 세션 파일 틀 만들기 |
+| `code-replay path` | 세션 폴더 경로 |
 
-`Tab` 으로 가이드와 단계 이름을 자동 완성하고, `↑` `↓` 로 이전 명령을 불러옵니다. 주소창의 `#/<가이드>/<단계>/<커밋>` 으로 특정 위치를 바로 열 수 있습니다.
+- 세션 폴더: `~/.code-replay/sessions` (`--dir` 또는 환경변수 `CODE_REPLAY_HOME` 으로 변경)
+- 서버가 켜진 동안 파일을 넣거나 지우면 터미널에 바뀐 목록이 뜨고, 브라우저를 새로고침하면 반영됩니다.
+- 이름이 `_` 로 시작하는 파일은 무시합니다(작성 중인 초안용).
 
-## 가이드 데이터 만들기
+## 세션 파일 형식
 
-가이드 원본은 `../code-replay-src/<slug>/` 에 둡니다 (형식은 `code-replay-src/CONTRACT.md`).
-
-- 단계마다 태그(`stage-<id>`)가 붙은 git 저장소
-- `guide.json`, `intro.md`, `stages/<id>.md`
-- 단계 설명의 `▶ \`경로\` — 재생에서 따라 칩니다` 줄이 말풍선을 나누는 기준입니다. 그 줄 앞의 글이 그 파일을 치기 시작할 때 뜹니다.
-- `guide.json` 에 `"publish": false` 를 넣으면 사이트에서 빠집니다.
-
-```bash
-pnpm export            # ../code-replay-src → public/data/*.json
-pnpm dev               # 로컬에서 보기
-pnpm test && pnpm build
+```yaml
+slug: my-guide
+title: 내 가이드
+summary: 무엇을 만들고 무엇을 배우는지
+lang: rust
+intro: |                 # 가이드 소개 (Markdown)
+  ...
+stages:
+  - id: "1"
+    title: 첫 단계
+    doc: |               # 단계 설명 (Markdown)
+      이 단계에서 할 일 …
+      ▶ `src/main.rs` — 재생에서 따라 칩니다
+      ### 확인
+      …
+    steps:               # 한 step = 재생되는 커밋 하나
+      - message: "[1] main.rs — 시작"
+        file: src/main.rs
+        content: |       # 이 step 이 끝난 뒤의 파일 전체
+          fn main() {}
+      - message: "[1] 여러 파일"
+        files:
+          - { path: Cargo.toml, content: "..." }
+          - { path: old.rs, delete: true }
+branches:                # 선택: 단계 끝에서 갈라지는 실험
+  - name: exp/try
+    title: 일부러 실패하기
+    after: "1"
+    doc: |
+    steps: [...]
 ```
 
-`public/data` 는 커밋해 둡니다. main 에 push 하면 GitHub Actions 가 Pages 로 배포합니다.
+- 설명의 `▶ \`경로\`` 줄이 말풍선을 나누는 기준입니다. 그 줄 앞의 글이 그 파일을 치기 시작할 때 뜨고, 마지막 표시 뒤의 글은 단계 마무리 말풍선이 됩니다.
+- step 에는 diff 가 아니라 **파일 전체 내용**을 적습니다. 바뀐 부분은 재생할 때 계산합니다.
+- 전체 정의는 `lib/sessions.mjs` 맨 위 주석에 있습니다.
+
+## 화면에서 쓰는 법
+
+1. 단계가 시작되면 말풍선에 "이 단계에서 할 일" 이 뜨고 재생이 멈춥니다. 읽고 **계속**(`Alt+Space`).
+2. 재생이 새 파일로 넘어가면 내 코드도 같은 파일을 엽니다. 친 코드는 브라우저에 자동 저장됩니다.
+3. **비교** 로 재생 코드와 diff 를 봅니다. 중간 단계부터 시작하면 시작 말풍선에 **앞 단계 코드 채우기** 가 나옵니다.
+4. 단계 목록은 왼쪽 위 ☰, 설명 전체와 소개는 오른쪽 위 버튼, 설정(말풍선, 자동 멈춤, 따라 열기)은 ⚙.
+
+| 키 | 동작 |
+| --- | --- |
+| `Alt+Space` | 재생 / 일시정지, 말풍선 계속 (에디터에서 치는 중에도) |
+| `Alt+,` `Alt+.` | 한 줄 뒤로 / 앞으로 |
+| `Alt+[` `Alt+]` | 이전 / 다음 커밋 |
+| `Alt+-` `Alt+=` | 느리게 / 빠르게 |
+| `[` `]` | 이전 / 다음 단계 (에디터 밖) |
+| `?` | 단축키 목록 |
+
+브라우저 안이라 빌드·실행·자동완성(rust-analyzer)은 없습니다. 빌드는 내 터미널에서 하세요.
+
+## 정적 사이트로 배포 (선택)
+
+```bash
+pnpm export      # 세션 폴더 → public/data/*.json (publish: false 인 세션은 제외)
+pnpm build       # dist/ 를 아무 정적 호스팅에 올리면 됩니다
+```
+
+main 에 push 하면 GitHub Actions 가 `public/data` 를 담아 Pages 로 배포합니다.
